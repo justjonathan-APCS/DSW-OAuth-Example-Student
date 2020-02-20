@@ -17,7 +17,7 @@ app.debug = True #Change this to False for production
 app.secret_key = os.environ['SECRET_KEY'] 
 oauth = OAuth(app)
 
-
+#Set up Github as the OAuth provider
 github = oauth.remote_app(
     'github',
     consumer_key=os.environ['GITHUB_CLIENT_ID'], 
@@ -48,7 +48,7 @@ def logout():
     session.clear()
     return render_template('message.html', message='You were logged out')
 
-@app.route()#the route should match the callback URL registered with the OAuth provider
+@app.route('/login/authorized')#the route should match the callback URL registered with the OAuth provider
 def authorized():
     resp = github.authorized_response()
     if resp is None:
@@ -57,8 +57,14 @@ def authorized():
     else:
         try:
             #save user data and set log in message
+            session['github_token'] = (resp['access_token'], '')
+            session['user_data'] = github.get('user').data
+            message = 'You were successfully logged in as ' + session['user_data']['login']
         except Exception as inst:
             #clear the session and give error message
+            session.clear()
+            print(inst)
+            message = 'Unable to login. Please Try again'
     return render_template('message.html', message=message)
 
 
@@ -72,7 +78,11 @@ def renderPage1():
 
 @app.route('/page2')
 def renderPage2():
-    return render_template('page2.html')
+    if 'user_data' in session:
+        user_data_pprint = pprint.pformat(session['user_data']['public_repos'])#format the user data nicely
+    else:
+        user_data_pprint = '';
+    return render_template('page2.html',dump_user_data=user_data_pprint)
 
 @github.tokengetter
 def get_github_oauth_token():
