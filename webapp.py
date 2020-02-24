@@ -1,7 +1,7 @@
 from flask import Flask, redirect, url_for, session, request, jsonify
 from flask_oauthlib.client import OAuth
 from flask import render_template
-
+from flask import flash
 import pprint
 import os
 
@@ -14,14 +14,14 @@ app = Flask(__name__)
 
 app.debug = True #Change this to False for production
 
-app.secret_key = os.environ['SECRET_KEY'] 
+app.secret_key = os.environ['SECRET_KEY'] #use SECRET_KEY to sign session cookies
 oauth = OAuth(app)
 
-set up github as oauth provider
+# Set up GitHub as OAuth provider
 github = oauth.remote_app(
     'github',
-    consumer_key=os.environ['GITHUB_CLIENT_ID'], 
-    consumer_secret=os.environ['GITHUB_CLIENT_SECRET'],
+    consumer_key=os.environ['GITHUB_CLIENT_ID'], #your web apps "username" for OAuth
+    consumer_secret=os.environ['GITHUB_CLIENT_SECRET'], # web apps "password" for OAUTh
     request_token_params={'scope': 'user:email'}, #request read-only access to the user's email.  For a list of possible scopes, see developer.github.com/apps/building-oauth-apps/scopes-for-oauth-apps
     base_url='https://api.github.com/',
     request_token_url=None,
@@ -30,7 +30,9 @@ github = oauth.remote_app(
     authorize_url='https://github.com/login/oauth/authorize' #URL for github's OAuth login
 )
 
-
+#context  processors run before templates are rendered and add variables to the template context
+#context processors must return a dictionary
+#this context processor adds the variable logged_in to the context for all temlates
 @app.context_processor
 def inject_logged_in():
     return {"logged_in":('github_token' in session)}
@@ -38,10 +40,10 @@ def inject_logged_in():
 @app.route('/')
 def home():
     return render_template('home.html')
-
+#redirect to GITHUB's OAUTH page and confirm the callback URL
 @app.route('/login')
 def login():   
-    return github.authorize(callback=url_for('authorized', _external=True, _scheme='https'))
+    return github.authorize(callback=url_for('authorized', _external=True, _scheme='https'))                                                                                                                   
 
 @app.route('/logout')
 def logout():
@@ -53,19 +55,18 @@ def authorized():
     resp = github.authorized_response()
     if resp is None:
         session.clear()
-        message = 'Access denied: reason=' + request.args['error'] + ' error=' + request.args['error_description'] + ' full=' + pprint.pformat(request.args)      
+        flash('Access denied: reason=' + request.args['error'] + ' error=' + request.args['error_description'])     
     else:
         try:
             #save user data and set log in message
-            session['github_token'] = (resp['access_token'], '')
-            session['user_data'] = github.get('user').data
-            message = 'You were succesfully logged in as ' + session['user_data']['login'] + '.'
-        except Exception as inst:
+            session['github_token']=(resp['access_token'],'')
+            session['user_data']=github.get('user').data
+            flash('You were successfully logged in as ' +  session['user_data']['login'])  
+        except:
             #clear the session and give error message
             session.clear()
-            print(inst)
-            message = 'Unable to login. Please try again.'
-    return render_template('message.html', message=message)
+            flash('Unable to login. Please try again.')
+    return render_template('home.html')
 
 
 @app.route('/page1')
@@ -78,12 +79,25 @@ def renderPage1():
 
 @app.route('/page2')
 def renderPage2():
-    return render_template('page2.html')
+    countDRACULA = 0
+    if 'user_data' in session:
+        if 'public_repos' in session['user_data']:
+            countDRACULA = session['user_data']['public_repos']
+    return render_template('page2.html', publicrepocount = countDRACULA)
 
+# the tokengetter is automaticallly called to check who is logged in
 @github.tokengetter
 def get_github_oauth_token():
-    return session['github_token']
+    return session.get('github_token')
 
 
 if __name__ == '__main__':
     app.run()
+    
+    #A
+    #G
+    #L
+    #E
+    #T
+    #AGLET
+    #DONT FORGET IT
