@@ -21,7 +21,16 @@
   </head>
   <body>
     {% include 'navbar.html' %}
-
+    {%with messages=get_flashed_messages()%}
+        {% if messages %}
+        <ul>
+        {%for messages in messages%}
+          <li>{{message}}</li>
+          {% endfor %}
+          </ul>
+          {% endif %}
+    {% endwith %}
+    
 
     <div id="content">
 
@@ -36,5 +45,4 @@
 
   </body>
 </html>
-
 
