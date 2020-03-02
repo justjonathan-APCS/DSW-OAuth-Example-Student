@@ -1,28 +1,35 @@
-from flask import Flask, redirect, url_for, session, request, jsonify
+from flask import Flask, redirect, url_for, session, request, jsonify, Markup
 from flask_oauthlib.client import OAuth
 from flask import render_template
-from flask import flash
+
 import pprint
 import os
+import json
 
-#
+os.system("echo '[]'>" + 'forum.json')
+
 app = Flask(__name__)
 
-app.debug = True 
-app.secret_key = os.environ['SECRET_KEY']
+app.debug = True #Change this to False for production
+
+app.secret_key = os.environ['SECRET_KEY'] #used to sign session cookies
 oauth = OAuth(app)
 
+#Set up GitHub as OAuth provider
 github = oauth.remote_app(
     'github',
-    consumer_key=os.environ['GITHUB_CLIENT_ID'], 
-    consumer_secret=os.environ['GITHUB_CLIENT_SECRET'], 
-    request_token_params={'scope': 'user:email'},
+    consumer_key=os.environ['GITHUB_CLIENT_ID'], #your web app's "username" for github's OAuth
+    consumer_secret=os.environ['GITHUB_CLIENT_SECRET'],#your web app's "password" for github's OAuth
+    request_token_params={'scope': 'user:email'}, #request read-only access to the user's email.  For a list of possible scopes, see developer.github.com/apps/building-oauth-apps/scopes-for-oauth-apps
     base_url='https://api.github.com/',
     request_token_url=None,
     access_token_method='POST',
     access_token_url='https://github.com/login/oauth/access_token',  
-    authorize_url='https://github.com/login/oauth/authorize'
+    authorize_url='https://github.com/login/oauth/authorize' #URL for github's OAuth login
+)
 
+#use a JSON file to store the past posts.  A global list variable doesn't work when handling multiple requests coming in and being handled on different threads
+#Create and set a global variable for the name of you JSON file here.  The file will be created on Heroku, so you don't need to make it in GitHub
 
 @app.context_processor
 def inject_logged_in():
@@ -30,11 +37,45 @@ def inject_logged_in():
 
 @app.route('/')
 def home():
-    return render_template('home.html')
+    return render_template('home.html', past_posts=posts_to_html())
 
+def posts_to_html():
+    forum_table = Markup("<table class='table table-bordered'> <tr> <th> Username </th> <th> Message </th> </tr>")
+    try: 
+        with open('forum.json', 'r') as f:
+            data = json.load(f)
+            for i in data:
+                print("Username: " + i["username"] + "     Message: " + i["message"])
+                forum_table += Markup("<tr> <td>" + i["username"] + "</td> <td>" + i["message"] + "</td>")
+    except:
+        print("Unable to load json :(")
+    forum_table += Markup("</table>")
+    return forum_table
+
+@app.route('/posted', methods=['POST'])
+def post():
+    username = session['user_data']['login']
+    message = request.form['message']
+    try:
+        with open('forum.json', 'r+') as f:
+            data = json.load(f)
+            data.append({"username":username, "message":message})
+            f.seek(0)
+            f.truncate()
+            json.dump(data, f)
+    except Exception as e:
+        print("Unable to load JSON :(")
+        print(e)
+        
+    return render_template('home.html', past_posts = posts_to_html())
+        
+    #This function should add the new post to the JSON file of posts and then render home.html and display the posts.  
+    #Every post should include the username of the poster and text of the post. 
+
+#redirect to GitHub's OAuth page and confirm callback URL
 @app.route('/login')
 def login():   
-    return github.authorize(callback=url_for('authorized', _external=True, _scheme='https'))                                                                                                                   
+    return github.authorize(callback=url_for('authorized', _external=True, _scheme='https')) #callback URL must match the pre-configured callback URL
 
 @app.route('/logout')
 def logout():
@@ -46,37 +87,19 @@ def authorized():
     resp = github.authorized_response()
     if resp is None:
         session.clear()
-        flash('Access denied: reason=' + request.args['error'] + ' error=' + request.args['error_description'])     
+        message = 'Access denied: reason=' + request.args['error'] + ' error=' + request.args['error_description'] + ' full=' + pprint.pformat(request.args)      
     else:
         try:
-            
-            session['github_token']=(resp['access_token'],'')
+            session['github_token'] = (resp['access_token'], '') #save the token to prove that the user logged in
             session['user_data']=github.get('user').data
-            flash('You were successfully logged in as ' +  session['user_data']['login'])  
-        except:
-           
+            message='You were successfully logged in as ' + session['user_data']['login']
+        except Exception as inst:
             session.clear()
-            flash('Unable to login. Please try again.')
-    return render_template('home.html')
+            print(inst)
+            message='Unable to login, please try again.  '
+    return render_template('message.html', message=message)
 
-
-@app.route('/page1')
-def renderPage1():
-    if 'user_data' in session:
-        user_data_pprint = pprint.pformat(session['user_data']
-    else:
-        user_data_pprint = '';
-    return render_template('page1.html',dump_user_data=user_data_pprint)
-
-@app.route('/page2')
-def renderPage2():
-    countDRACULA = 0
-    if 'user_data' in session:
-        if 'public_repos' in session['user_data']:
-            countDRACULA = session['user_data']['public_repos']
-    return render_template('page2.html', publicrepocount = countDRACULA)
-
-                                          
+#the tokengetter is automatically called to check who is logged in.
 @github.tokengetter
 def get_github_oauth_token():
     return session.get('github_token')
@@ -84,6 +107,3 @@ def get_github_oauth_token():
 
 if __name__ == '__main__':
     app.run()
-    
-   
-    
